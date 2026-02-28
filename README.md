@@ -2,6 +2,7 @@
 
 No-Limit poker game running entirely in the browser.  
 Inspired by the Python poker engine at [github.com/dickreuter/Poker](https://github.com/dickreuter/Poker).
+Try this: lamisreal.github.io/PokerGame
 
 ---
 
@@ -80,3 +81,4 @@ The bot AI is modelled after `decisionmaker.py` and `montecarlo_python.py` from 
 ## License
 
 Based on the open-source Poker Định Mệnh project (GPL-3.0).
+
