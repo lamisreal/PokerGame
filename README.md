@@ -2,13 +2,15 @@
 
 No-Limit poker game running entirely in the browser.  
 Inspired by the Python poker engine at [github.com/dickreuter/Poker](https://github.com/dickreuter/Poker).
-<br>Try this: [[lamisreal.github.io/PokerGame](https://lamisreal.github.io/PokerGame/)].
+## 🌐 Live Demo
+
+▶️ **[https://lamisreal.github.io/PokerGame/](https://lamisreal.github.io/PokerGame/)**
 
 ---
 
 ## How to Play
 
-1. Open **`index.html`** in any modern browser (Chrome / Edge / Firefox).
+1. Run **`start.bat`** để khởi động server, sau đó mở trình duyệt và truy cập **`http://127.0.0.1:5500`** (Chrome / Edge / Firefox).
 2. You are **Seat 0** (bottom of the table). Bots occupy seats 1-5.
 3. Each player starts with **$1,000**.
 4. Use the action bar at the bottom to **Fold / Check / Call / Raise / All-In**.
@@ -82,5 +84,78 @@ The bot AI is modelled after `decisionmaker.py` and `montecarlo_python.py` from 
 
 Based on the open-source Poker Định Mệnh project (GPL-3.0).
 
+---
 
+## 🚀 Deployment Guide
 
+### Architecture
+
+```
+GitHub Pages  →  index.html, css/, js/   (static frontend)
+Render.com    →  server.py, poker_engine.py  (Python backend)
+```
+
+---
+
+### 1. Deploy Backend (Render.com)
+
+1. Push code lên GitHub (nhánh `master`)
+2. Vào [render.com](https://render.com) → đăng ký / đăng nhập
+3. **New → Web Service** → kết nối GitHub repo
+4. Cấu hình:
+
+   | Trường | Giá trị |
+   |---|---|
+   | Runtime | Python 3 |
+   | Build Command | `pip install -r requirements.txt` |
+   | Start Command | `python server.py` |
+   | Instance Type | Free |
+
+5. Sau khi deploy xong, Render cấp URL dạng `https://your-app.onrender.com`
+6. Mở `js/client.js`, sửa dòng đầu:
+
+   ```javascript
+   // Từ:
+   const socket = io();
+   // Thành:
+   const socket = io('https://your-app.onrender.com');
+   ```
+
+> ⚠️ Free tier sẽ "ngủ" sau 15 phút không có request. Lần đầu kết nối chờ ~30 giây.
+
+---
+
+### 2. Deploy Frontend (GitHub Pages)
+
+```bash
+# Tạo nhánh gh-pages chứa chỉ các file tĩnh
+git checkout --orphan gh-pages
+git rm -rf .
+
+# Copy file frontend cần thiết từ master
+git checkout master -- index.html css/ js/ CNAME
+
+# Commit và push
+git add .
+git commit -m "GitHub Pages frontend"
+git push origin gh-pages
+```
+
+Sau đó vào repo GitHub → **Settings → Pages**:
+- Source: `gh-pages` branch, `/ (root)`
+- Nhấn **Save**
+
+URL sau khi deploy: `https://<username>.github.io/<repo-name>/`
+
+---
+
+### 3. Cập nhật backend URL sau mỗi lần chỉnh sửa
+
+```bash
+# Sau khi sửa code, build lại gh-pages
+git checkout gh-pages
+git checkout master -- index.html css/ js/
+git add .
+git commit -m "sync frontend from master"
+git push origin gh-pages
+```
