@@ -4,7 +4,7 @@
    Connects to SocketIO namespace /tienlen
    ══════════════════════════════════════════════════════════ */
 
-const socket = io('/tienlen');
+const socket = io('https://your-app.onrender.com', { path: '/socket.io' });
 
 /* ── State ─────────────────────────────────────────────── */
 let MY_SID          = null;
