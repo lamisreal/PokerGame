@@ -3,7 +3,7 @@
    client.js  –  Socket.IO multiplayer client
    ══════════════════════════════════════════════════════════ */
 
-const socket = io();          // connects to same origin
+const socket = io('https://pokergame-sodn.onrender.com');          // connects to same origin
 
 /* ── State ─────────────────────────────────────────────────── */
 let MY_SID        = null;
