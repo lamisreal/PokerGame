@@ -2,9 +2,6 @@
 
 No-Limit poker game running entirely in the browser.  
 Inspired by the Python poker engine at [github.com/dickreuter/Poker](https://github.com/dickreuter/Poker).
-## 🌐 Live Demo
-
-▶️ **[https://lamisreal.github.io/PokerGame/](https://lamisreal.github.io/PokerGame/)**
 
 ---
 
@@ -139,7 +136,10 @@ git checkout --orphan gh-pages
 git rm -rf .
 
 # Copy file frontend cần thiết từ master
+# Lần đầu tiên:
 git checkout master -- index.html css/ js/ CNAME
+# từ lần 2 trở đi:
+git checkout master -- index.html css/ js/
 
 # Commit và push
 git add .
@@ -160,7 +160,7 @@ URL sau khi deploy: `https://<username>.github.io/<repo-name>/`
 ```bash
 # Sau khi sửa code, build lại gh-pages
 git checkout gh-pages
-git checkout master -- index.html css/ js/
+git checkout master -- index.html css/ js/ tienlen/ poker/
 git add .
 git commit -m "sync frontend from master"
 git push origin gh-pages
