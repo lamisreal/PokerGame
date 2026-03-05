@@ -86,15 +86,12 @@ Based on the open-source Poker Định Mệnh project (GPL-3.0).
 
 ---
 
-<<<<<<< HEAD
-=======
 ## 🌐 Live Demo
 
 ▶️ **[https://lamisreal.github.io/PokerGame/](https://lamisreal.github.io/PokerGame/)**
 
 ---
 
->>>>>>> b4836ea (change)
 ## 🚀 Deployment Guide
 
 ### Architecture
@@ -167,8 +164,4 @@ git checkout master -- index.html css/ js/
 git add .
 git commit -m "sync frontend from master"
 git push origin gh-pages
-<<<<<<< HEAD
 ```
-=======
-```
->>>>>>> b4836ea (change)
