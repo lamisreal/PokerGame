@@ -1,192 +1,336 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="vi">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Poker Định Mệnh</title>
-  <link rel="stylesheet" href="css/style.css" />
-  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+  <title>🎮 Game LAS House</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@700;900&family=Roboto:wght@400;500&display=swap');
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      min-height: 100vh;
+      background: radial-gradient(ellipse at top, #1a0a2e 0%, #0d0d1a 60%, #000 100%);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      font-family: 'Roboto', sans-serif;
+      overflow: hidden;
+    }
+
+    /* ── Animated stars background ── */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image:
+        radial-gradient(1px 1px at 15% 20%, rgba(255,255,255,.55) 0%, transparent 100%),
+        radial-gradient(1px 1px at 40% 70%, rgba(255,255,255,.4) 0%, transparent 100%),
+        radial-gradient(1.5px 1.5px at 65% 15%, rgba(255,255,255,.5) 0%, transparent 100%),
+        radial-gradient(1px 1px at 85% 55%, rgba(255,255,255,.35) 0%, transparent 100%),
+        radial-gradient(2px 2px at 30% 90%, rgba(255,255,255,.3) 0%, transparent 100%),
+        radial-gradient(1px 1px at 72% 85%, rgba(255,255,255,.45) 0%, transparent 100%),
+        radial-gradient(1.5px 1.5px at 50% 40%, rgba(255,255,255,.3) 0%, transparent 100%),
+        radial-gradient(1px 1px at 10% 60%, rgba(255,255,255,.4) 0%, transparent 100%),
+        radial-gradient(1px 1px at 92% 30%, rgba(255,255,255,.5) 0%, transparent 100%);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* ── Header ── */
+    .main-header {
+      position: relative;
+      z-index: 1;
+      text-align: center;
+      margin-bottom: 48px;
+    }
+    .main-header h1 {
+      font-family: 'Montserrat', sans-serif;
+      font-size: clamp(2rem, 5vw, 3.5rem);
+      font-weight: 900;
+      letter-spacing: 3px;
+      text-transform: uppercase;
+      background: linear-gradient(135deg, #ffd700 0%, #ffaa00 40%, #ff6600 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      text-shadow: none;
+      filter: drop-shadow(0 0 18px rgba(255,170,0,.6));
+    }
+    .main-header p {
+      margin-top: 10px;
+      color: rgba(255,255,255,.5);
+      font-size: .95rem;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+    }
+
+    /* ── Cards grid ── */
+    .game-grid {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      gap: 40px;
+      flex-wrap: wrap;
+      justify-content: center;
+      padding: 0 24px;
+    }
+
+    /* ── Individual game card ── */
+    .game-card {
+      width: 300px;
+      border-radius: 24px;
+      overflow: hidden;
+      cursor: pointer;
+      text-decoration: none;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      position: relative;
+      transition: transform .35s cubic-bezier(.34,1.56,.64,1), box-shadow .35s ease;
+      box-shadow: 0 8px 32px rgba(0,0,0,.6);
+    }
+    .game-card:hover {
+      transform: translateY(-12px) scale(1.03);
+    }
+
+    /* ── Tiến Lên card ── */
+    .card-tienlen {
+      background: linear-gradient(160deg, #0d5e1d 0%, #0a7a26 40%, #04b53a 100%);
+      box-shadow: 0 8px 32px rgba(4,181,58,.35);
+      border: 2px solid rgba(4,181,58,.5);
+    }
+    .card-tienlen:hover {
+      box-shadow: 0 20px 60px rgba(4,181,58,.55);
+    }
+
+    /* ── Poker card ── */
+    .card-poker {
+      background: linear-gradient(160deg, #3d0000 0%, #7a1000 40%, #c42000 100%);
+      box-shadow: 0 8px 32px rgba(196,32,0,.35);
+      border: 2px solid rgba(196,32,0,.5);
+    }
+    .card-poker:hover {
+      box-shadow: 0 20px 60px rgba(220,60,0,.6);
+    }
+
+    /* ── Thumbnail area ── */
+    .card-thumb {
+      width: 100%;
+      height: 200px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      overflow: hidden;
+    }
+    .card-thumb::after {
+      content: '';
+      position: absolute;
+      bottom: 0; left: 0; right: 0;
+      height: 60px;
+      background: linear-gradient(to top, rgba(0,0,0,.5), transparent);
+    }
+
+    /* ── Tiến Lên thumb visual ── */
+    .tienlen-visual {
+      display: flex;
+      gap: 6px;
+      align-items: flex-end;
+    }
+    .tl-card {
+      width: 52px;
+      height: 76px;
+      background: #fff;
+      border-radius: 7px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.6rem;
+      font-weight: 900;
+      line-height: 1;
+      box-shadow: 3px 3px 8px rgba(0,0,0,.5);
+      color: #111;
+      transition: transform .2s;
+      position: relative;
+    }
+    .tl-card:nth-child(1) { transform: rotate(-8deg) translateY(8px); }
+    .tl-card:nth-child(2) { transform: rotate(-3deg) translateY(3px); }
+    .tl-card:nth-child(3) { transform: rotate(2deg) translateY(0px); }
+    .tl-card:nth-child(4) { transform: rotate(7deg) translateY(4px); }
+    .tl-card .suit { font-size: .75rem; margin-top: 2px; }
+    .tl-card.red { color: #d32f2f; }
+    .game-card:hover .tl-card:nth-child(1) { transform: rotate(-12deg) translateY(14px); }
+    .game-card:hover .tl-card:nth-child(2) { transform: rotate(-4deg) translateY(5px); }
+    .game-card:hover .tl-card:nth-child(3) { transform: rotate(4deg) translateY(2px); }
+    .game-card:hover .tl-card:nth-child(4) { transform: rotate(12deg) translateY(8px); }
+
+    /* ── Poker thumb visual ── */
+    .poker-visual {
+      position: relative;
+      width: 120px;
+      height: 120px;
+    }
+    .pk-card {
+      width: 66px;
+      height: 90px;
+      background: #fff;
+      border-radius: 8px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      font-size: 2rem;
+      font-weight: 900;
+      color: #d32020;
+      position: absolute;
+      box-shadow: 4px 4px 12px rgba(0,0,0,.6);
+      line-height: 1;
+    }
+    .pk-card span { font-size: .8rem; }
+    .pk-card:nth-child(1) { top: 0; left: 0;  transform: rotate(-10deg); }
+    .pk-card:nth-child(2) { top: 18px; left: 36px; transform: rotate(8deg); background: #fff9; }
+    .game-card:hover .pk-card:nth-child(1) { transform: rotate(-14deg) translateX(-4px); }
+    .game-card:hover .pk-card:nth-child(2) { transform: rotate(12deg) translateX(4px); }
+
+    /* ── Badge (year) ── */
+    .badge {
+      position: absolute;
+      top: 12px;
+      right: 14px;
+      background: linear-gradient(135deg, #ffd700, #ff8c00);
+      color: #000;
+      font-family: 'Montserrat', sans-serif;
+      font-weight: 900;
+      font-size: .75rem;
+      padding: 3px 10px;
+      border-radius: 20px;
+      letter-spacing: 1px;
+      z-index: 2;
+    }
+
+    /* ── Card body ── */
+    .card-body {
+      width: 100%;
+      padding: 20px 22px 24px;
+      text-align: center;
+    }
+    .card-body h2 {
+      font-family: 'Montserrat', sans-serif;
+      font-size: 1.3rem;
+      font-weight: 900;
+      color: #fff;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      margin-bottom: 6px;
+      text-shadow: 0 2px 8px rgba(0,0,0,.4);
+    }
+    .card-body p {
+      font-size: .82rem;
+      color: rgba(255,255,255,.7);
+      margin-bottom: 18px;
+      letter-spacing: .5px;
+    }
+    .play-btn {
+      display: inline-block;
+      padding: 10px 32px;
+      border-radius: 50px;
+      font-family: 'Montserrat', sans-serif;
+      font-weight: 700;
+      font-size: .9rem;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      color: #fff;
+      border: 2px solid rgba(255,255,255,.7);
+      background: rgba(255,255,255,.12);
+      backdrop-filter: blur(4px);
+      transition: background .2s, border-color .2s;
+      pointer-events: none;
+    }
+    .game-card:hover .play-btn {
+      background: rgba(255,255,255,.25);
+      border-color: #fff;
+    }
+
+    /* ── Footer ── */
+    .main-footer {
+      position: relative;
+      z-index: 1;
+      margin-top: 48px;
+      color: rgba(255,255,255,.25);
+      font-size: .78rem;
+      letter-spacing: 1px;
+      text-align: center;
+    }
+
+    /* ── Pulse glow animation ── */
+    @keyframes pulse-glow {
+      0%, 100% { filter: drop-shadow(0 0 18px rgba(255,170,0,.6)); }
+      50%       { filter: drop-shadow(0 0 32px rgba(255,200,0,.9)); }
+    }
+    .main-header h1 { animation: pulse-glow 3s ease-in-out infinite; }
+
+    /* ── Responsive ── */
+    @media (max-width: 680px) {
+      .game-grid { gap: 24px; }
+      .game-card  { width: 260px; }
+      .card-thumb { height: 170px; }
+    }
+  </style>
 </head>
 <body>
 
-<!-- ═══════════════════════════ LOBBY ═══════════════════════════ -->
-<div id="lobby">
-  <div id="lobby-box">
-    <h1>♠ Poker Định Mệnh</h1>
-    <p class="lobby-subtitle">Không giới hạn số người · 1 Room · Max 6 Players</p>
-
-    <div id="lobby-join">
-      <input id="player-name" type="text" maxlength="20" placeholder="Nhập tên…" autocomplete="off" />
-      <button id="btn-join">Tham gia</button>
-    </div>
-    <p id="lobby-returning-info" style="display:none"></p>
-
-    <div id="lobby-players">
-      <ul id="lobby-player-list"></ul>
-    </div>
-
-    <div id="lobby-spectators" style="display:none">
-      <h3>Spectators Waiting</h3>
-      <ul id="lobby-spectator-list"></ul>
-    </div>
-
-    <p id="lobby-hint">Waiting for players…</p>
-  </div>
-</div>
-
-<!-- ═══════════════════════════ MAIN TABLE ═══════════════════════════ -->
-<div id="app" style="display:none">
-
-  <!-- Top bar -->
-  <header id="top-bar">
-    <span id="logo">♠ Poker Định Mệnh</span>
-    <button id="btn-reset-room" style="display:none" title="Reset toàn bộ phòng">🔄 Reset</button>
-    <span id="round-label">Không giới hạn số người</span>
-    <span id="hand-label"></span>
+  <!-- ── Header ── -->
+  <header class="main-header">
+    <h1>🎴 Game LAS House</h1>
+    <p>Chọn trò chơi để bắt đầu</p>
   </header>
 
-  <!-- Poker table -->
-  <div id="table-wrap">
-    <div id="table">
+  <!-- ── Game grid ── -->
+  <div class="game-grid">
 
-      <!-- ── Seats ── -->
-      <!-- Seat 0 = Human (bottom-center) -->
-      <div class="seat" id="seat-0" data-seat="0">
-        <div class="player-name" id="name-0">Seat 0</div>
-        <div class="hole-cards" id="hole-0"></div>
-        <div class="player-chips" id="chips-0">$1 000</div>
-        <div class="player-bet"  id="bet-0"></div>
-        <div class="dealer-btn"  id="dealer-0" style="display:none">D</div>
-        <div class="player-status" id="status-0"></div>
+    <!-- Tiến Lên Miền Nam -->
+    <a class="game-card card-tienlen" href="/tienlen/">
+      <div class="card-thumb">
+        <div class="tienlen-visual">
+          <div class="tl-card red">2<span>♥</span></div>
+          <div class="tl-card">2<span>♠</span></div>
+          <div class="tl-card red">2<span>♦</span></div>
+          <div class="tl-card">2<span>♣</span></div>
+        </div>
       </div>
-
-      <!-- Seat 1 – bottom-left -->
-      <div class="seat" id="seat-1" data-seat="1">
-        <div class="player-name" id="name-1">Bot 1</div>
-        <div class="hole-cards" id="hole-1"></div>
-        <div class="player-chips" id="chips-1">$1 000</div>
-        <div class="player-bet"  id="bet-1"></div>
-        <div class="dealer-btn"  id="dealer-1" style="display:none">D</div>
-        <div class="player-status" id="status-1"></div>
+      <div class="card-body">
+        <h2>Tiến Lên Miền Nam</h2>
+        <p>2 – 4 người · Đánh bài dân gian Việt Nam</p>
+        <span class="play-btn">Chơi ngay ▶</span>
       </div>
+    </a>
 
-      <!-- Seat 2 – mid-left -->
-      <div class="seat" id="seat-2" data-seat="2">
-        <div class="player-name" id="name-2">Bot 2</div>
-        <div class="hole-cards" id="hole-2"></div>
-        <div class="player-chips" id="chips-2">$1 000</div>
-        <div class="player-bet"  id="bet-2"></div>
-        <div class="dealer-btn"  id="dealer-2" style="display:none">D</div>
-        <div class="player-status" id="status-2"></div>
+    <!-- Poker -->
+    <a class="game-card card-poker" href="/poker/">
+      <div class="badge">2024</div>
+      <div class="card-thumb">
+        <div class="poker-visual">
+          <div class="pk-card">A<span>♥</span></div>
+          <div class="pk-card">A<span>♦</span></div>
+        </div>
       </div>
-
-      <!-- Seat 3 – top-left -->
-      <div class="seat" id="seat-3" data-seat="3">
-        <div class="player-name" id="name-3">Bot 3</div>
-        <div class="hole-cards" id="hole-3"></div>
-        <div class="player-chips" id="chips-3">$1 000</div>
-        <div class="player-bet"  id="bet-3"></div>
-        <div class="dealer-btn"  id="dealer-3" style="display:none">D</div>
-        <div class="player-status" id="status-3"></div>
+      <div class="card-body">
+        <h2>Poker Định Mệnh</h2>
+        <p>Tối đa 6 người · Texas Hold'em No Limit</p>
+        <span class="play-btn">Chơi ngay ▶</span>
       </div>
+    </a>
 
-      <!-- Seat 4 – top-right -->
-      <div class="seat" id="seat-4" data-seat="4">
-        <div class="player-name" id="name-4">Bot 4</div>
-        <div class="hole-cards" id="hole-4"></div>
-        <div class="player-chips" id="chips-4">$1 000</div>
-        <div class="player-bet"  id="bet-4"></div>
-        <div class="dealer-btn"  id="dealer-4" style="display:none">D</div>
-        <div class="player-status" id="status-4"></div>
-      </div>
-
-      <!-- Seat 5 – mid-right -->
-      <div class="seat" id="seat-5" data-seat="5">
-        <div class="player-name" id="name-5">Bot 5</div>
-        <div class="hole-cards" id="hole-5"></div>
-        <div class="player-chips" id="chips-5">$1 000</div>
-        <div class="player-bet"  id="bet-5"></div>
-        <div class="dealer-btn"  id="dealer-5" style="display:none">D</div>
-        <div class="player-status" id="status-5"></div>
-      </div>
-
-      <!-- ── Center area ── -->
-      <div id="center">
-        <div id="community-cards"></div>
-        <div id="pot-display">Pot: $0</div>
-        <div id="phase-label"></div>
-      </div>
-
-    </div><!-- /table -->
-  </div><!-- /table-wrap -->
-
-  <!-- ── Action bar (human only) ── -->
-  <div id="action-bar">
-
-    <!-- Full-table countdown (6/6 players) -->
-    <div id="full-table-countdown" style="display:none">
-      ⚡ Đủ 6 người! Trận đấu tự động bắt đầu sau <span id="countdown-secs">10</span>s
-      <div id="countdown-bar-wrap"><div id="countdown-bar"></div></div>
-    </div>
-
-    <!-- Spectator banner -->
-    <div id="spectator-banner" style="display:none">
-      <span>👁 Bạn đang xem</span>
-      <button id="btn-sit-down" class="ctrl-btn sit-btn" style="display:none">&#x1FA91; Tham gia</button>
-    </div>
-
-    <!-- Host start banner -->
-    <div id="start-banner" style="display:none">
-      <button id="btn-game-start" class="ctrl-btn start-btn">▶ Bắt đầu</button>
-      <span id="start-hint">Chờ đội trưởng bắt đầu…</span>
-    </div>
-
-    <!-- Player controls (always visible when seated) -->
-    <div id="player-controls" style="display:none">
-      <button id="btn-stand-up" class="ctrl-btn standup-btn">🪑 Đứng lên</button>
-      <button id="btn-leave"    class="ctrl-btn leave-btn">🚪 Thoát ra</button>
-    </div>
-    <div id="action-info">
-      <span id="call-amount-label"></span>
-      <span id="equity-label"></span>
-    </div>
-    <div id="action-buttons">
-      <button id="btn-fold"  class="action-btn fold-btn"  disabled>Fold</button>
-      <button id="btn-check" class="action-btn check-btn" disabled>Check</button>
-      <button id="btn-call"  class="action-btn call-btn"  disabled>Call</button>
-      <button id="btn-raise" class="action-btn raise-btn" disabled>Raise</button>
-      <button id="btn-allin" class="action-btn allin-btn" disabled>All-In</button>
-    </div>
-    <div id="raise-area" style="display:none">
-      <label>Raise to: $<input id="raise-amount" type="number" min="1" value="20" /></label>
-      <button id="btn-raise-confirm" class="action-btn raise-btn">Confirm Raise</button>
-    </div>
   </div>
 
-  <!-- ── Log panel ── -->
-  <div id="log-panel">
-    <div id="log-title">📋 Game Log</div>
-    <div id="log-body"></div>
-  </div>
+  <!-- ── Footer ── -->
+  <footer class="main-footer">
+    <p>Game LAS House &copy; 2026 &nbsp;·&nbsp; Chỉ dành cho vui chơi nội bộ</p>
+  </footer>
 
-</div><!-- /app -->
-
-<!-- ── Message overlay (outside #app so it always renders) ── -->
-<div id="message-overlay" style="display:none">
-  <div id="message-box">
-    <div id="message-drag-handle">
-      <div id="message-title"></div>
-    </div>
-    <div id="message-body"></div>
-    <button id="message-ok">Continue</button>
-  </div>
-</div>
-
-<!-- ── Scripts (order matters) ── -->
-<script src="js/deck.js"></script>
-<script src="js/evaluator.js"></script>
-<script src="js/montecarlo.js"></script>
-<script src="js/ui.js"></script>
-<script src="js/client.js"></script>
 </body>
 </html>
