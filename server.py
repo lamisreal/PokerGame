@@ -1,8 +1,9 @@
-# server.py – Flask-SocketIO multiplayer poker server
+# server.py – Flask-SocketIO multiplayer server (Poker + Tiến Lên)
 from threading import Timer
-from flask import Flask, request, send_from_directory, send_file, abort
+from flask import Flask, request, send_from_directory, send_file, abort, redirect
 from flask_socketio import SocketIO, join_room, leave_room, emit
-from poker_engine import PokerRoom, Phase, SUPER_ADMIN_NAME, MAX_PLAYERS, START_CHIPS
+from poker_engine  import PokerRoom, Phase, SUPER_ADMIN_NAME, MAX_PLAYERS, START_CHIPS
+from tienlen_engine import TienLenRoom, TLPhase, SUPER_ADMIN_NAME as TL_SUPER_ADMIN
 import os
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -32,6 +33,11 @@ def static_files(path):
     full = os.path.join(BASE_DIR, path)
     if os.path.isfile(full):
         return send_from_directory(BASE_DIR, path)
+    # Serve index.html when path is a sub-directory (e.g. /poker/ or /poker)
+    dir_path = full.rstrip('/\\')
+    index_file = os.path.join(dir_path, 'index.html')
+    if os.path.isdir(dir_path) and os.path.isfile(index_file):
+        return send_file(index_file)
     abort(404)
 
 
@@ -548,8 +554,451 @@ def on_reset_room(_data=None):
 
 
 
+# ══════════════════════════════════════════════════════════════════════════════
+# TIẾN LÊN – Routes & SocketIO handlers (namespace /tienlen)
+# ══════════════════════════════════════════════════════════════════════════════
+
+TL_DIR      = os.path.join(BASE_DIR, 'tienlen')
+TL_ROOM     = TienLenRoom()
+TL_ROOM_KEY = 'tienlen_room'
+TL_NS       = '/tienlen'
+tl_turn_timer: Timer = None
+TL_TURN_SECS = 30
+
+
+# ── Static routes ─────────────────────────────────────────────────────────────
+
+@app.route('/tienlen')
+def tienlen_redirect():
+    return redirect('/tienlen/', 301)
+
+@app.route('/tienlen/')
+def tienlen_index():
+    return send_file(os.path.join(TL_DIR, 'index.html'))
+
+@app.route('/tienlen/<path:path>')
+def tienlen_static(path):
+    full = os.path.join(TL_DIR, path)
+    if os.path.isfile(full):
+        return send_from_directory(TL_DIR, path)
+    abort(404)
+
+
+# ── Poker sub-directory routes ────────────────────────────────────────────────
+
+POKER_DIR = os.path.join(BASE_DIR, 'poker')
+
+@app.route('/poker')
+def poker_redirect():
+    return redirect('/poker/', 301)
+
+@app.route('/poker/')
+def poker_index():
+    return send_file(os.path.join(POKER_DIR, 'index.html'))
+
+@app.route('/poker/<path:path>')
+def poker_static(path):
+    full = os.path.join(POKER_DIR, path)
+    if os.path.isfile(full):
+        return send_from_directory(POKER_DIR, path)
+    abort(404)
+
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+def _tl_broadcast(reveal_all=False):
+    """Send personalised tl_game_state to every connected client."""
+    for p in TL_ROOM.players:
+        if p.active:
+            state = TL_ROOM.get_state(viewer_sid=p.sid, reveal_all=reveal_all)
+            sio.emit('tl_game_state', state, room=p.sid, namespace=TL_NS)
+    base = TL_ROOM.get_state(viewer_sid=None, reveal_all=reveal_all)
+    for sid in TL_ROOM.spectators:
+        sio.emit('tl_game_state', base, room=sid, namespace=TL_NS)
+
+
+def _tl_log(msg, highlight=False, penalty=False):
+    sio.emit('tl_log', {'msg': msg, 'highlight': highlight, 'penalty': penalty},
+             room=TL_ROOM_KEY, namespace=TL_NS)
+
+
+def _tl_record_round_history(score_data):
+    """Append this round's result to room history and broadcast the updated list."""
+    entry = {
+        'round':   TL_ROOM.round_num,
+        'players': [{'name': r['name'], 'change': r['change']}
+                    for r in score_data.get('score_changes', [])],
+    }
+    TL_ROOM.round_history.append(entry)
+    sio.emit('tl_round_history', {'history': TL_ROOM.round_history},
+             room=TL_ROOM_KEY, namespace=TL_NS)
+
+
+def _tl_notify_turn():
+    # Guard: end round early if ≤ 1 player still has cards
+    early = TL_ROOM.try_end_round_early()
+    if early.get('ended'):
+        _tl_stop_turn_timer()
+        score_data = TL_ROOM.calculate_scores()
+        _tl_broadcast(reveal_all=True)
+        _tl_record_round_history(score_data)
+        sio.emit('tl_scoring', score_data, room=TL_ROOM_KEY, namespace=TL_NS)
+        _tl_log('🏁 Kết thúc sớm – không đủ người chơi!', highlight=True)
+        TL_ROOM.reset_for_next_round()
+        _tl_broadcast()
+        return
+
+    cur = TL_ROOM.current_turn_player()
+    if not cur: return
+    free_play  = (TL_ROOM.trick_type is None)
+    can_pass   = not free_play
+    sio.emit('tl_your_turn',
+             {'seat': cur.seat, 'canPass': can_pass, 'freePlay': free_play},
+             room=cur.sid, namespace=TL_NS)
+    sio.emit('tl_turn_changed', {'seat': cur.seat, 'name': cur.name},
+             room=TL_ROOM_KEY, namespace=TL_NS)
+    # turn timer
+    _tl_stop_turn_timer()
+    global tl_turn_timer
+    tl_turn_timer = Timer(TL_TURN_SECS, _tl_turn_timeout)
+    tl_turn_timer.daemon = True
+    tl_turn_timer.start()
+    sio.emit('tl_turn_timer', {'seat': cur.seat, 'seconds': TL_TURN_SECS},
+             room=TL_ROOM_KEY, namespace=TL_NS)
+
+
+def _tl_stop_turn_timer():
+    global tl_turn_timer
+    if tl_turn_timer:
+        tl_turn_timer.cancel()
+        tl_turn_timer = None
+
+
+def _tl_maybe_auto_reset():
+    """Reset the room when no active players remain (preserve registry + spectators)."""
+    global TL_ROOM, tl_turn_timer
+    if not TL_ROOM.is_empty():
+        return
+    if tl_turn_timer:
+        tl_turn_timer.cancel()
+        tl_turn_timer = None
+    # Save spectators and score registry so they're not lost
+    saved_spectators = dict(TL_ROOM.spectators)
+    saved_registry   = dict(TL_ROOM.registry)
+    TL_ROOM          = TienLenRoom()
+    TL_ROOM.spectators = saved_spectators
+    TL_ROOM.registry   = saved_registry
+    _tl_broadcast()
+    _tl_log('🔄 Bàn tự động reset vì không còn ai chơi.')
+
+
+def _tl_turn_timeout():
+    global tl_turn_timer
+    tl_turn_timer = None
+    cur = TL_ROOM.current_turn_player()
+    if not cur: return
+    # Auto-pass if possible, otherwise play first card
+    if TL_ROOM.trick_type is not None:
+        result = TL_ROOM.pass_turn(cur.sid)
+        if result.get('ok'):
+            _tl_log(f'⏱️ {cur.name} hết giờ – bỏ qua.')
+            _tl_after_action(result)
+    else:
+        # Free to play – auto-play lowest card
+        if cur.hand:
+            lowest = min(cur.hand, key=lambda c: c.value)
+            result = TL_ROOM.play_cards(cur.sid, [lowest.value])
+            if result.get('ok'):
+                _tl_log(f'⏱️ {cur.name} hết giờ – đánh tự động.')
+                _tl_after_action(result)
+
+
+def _tl_after_action(result):
+    """Handle aftermath of a play or pass action."""
+    if result.get('round_over'):
+        _tl_stop_turn_timer()
+        score_data = TL_ROOM.calculate_scores()
+        _tl_broadcast(reveal_all=True)
+        _tl_record_round_history(score_data)
+        sio.emit('tl_scoring', score_data, room=TL_ROOM_KEY, namespace=TL_NS)
+        _tl_log('🏁 Kết thúc vòng! Xem bảng điểm.', highlight=True)
+        TL_ROOM.reset_for_next_round()
+        _tl_broadcast()   # push WAITING state so host sees Start button
+        return
+
+    # Safety net: end round if ≤ 1 player still holds cards
+    early = TL_ROOM.try_end_round_early()
+    if early.get('ended'):
+        _tl_stop_turn_timer()
+        score_data = TL_ROOM.calculate_scores()
+        _tl_broadcast(reveal_all=True)
+        _tl_record_round_history(score_data)
+        sio.emit('tl_scoring', score_data, room=TL_ROOM_KEY, namespace=TL_NS)
+        _tl_log('🏁 Kết thúc sớm – không đủ người chơi!', highlight=True)
+        TL_ROOM.reset_for_next_round()
+        _tl_broadcast()
+        return
+
+    if result.get('trick_cleared'):
+        _tl_broadcast()
+        _tl_log(f'🔄 Trick đã được làm sạch – {TL_ROOM._get_player_by_seat(TL_ROOM.trick_leader).name if TL_ROOM.trick_leader is not None and TL_ROOM._get_player_by_seat(TL_ROOM.trick_leader) else "?"} dẫn đầu.')
+        _tl_notify_turn()
+        return
+
+    _tl_broadcast()
+    _tl_notify_turn()
+
+
+# ── Socket events (namespace /tienlen) ───────────────────────────────────────
+
+@sio.on('connect', namespace=TL_NS)
+def tl_on_connect():
+    join_room(request.sid, namespace=TL_NS)
+    join_room(TL_ROOM_KEY, namespace=TL_NS)
+    emit('tl_connected', {'sid': request.sid}, namespace=TL_NS)
+    # Send current room state immediately so the lobby can check for name
+    # conflicts before the user clicks "Vào bàn"
+    state = TL_ROOM.get_state(viewer_sid=None)
+    emit('tl_game_state', state, namespace=TL_NS)
+
+
+@sio.on('disconnect', namespace=TL_NS)
+def tl_on_disconnect():
+    _tl_stop_turn_timer()
+    sid = request.sid
+    p   = TL_ROOM._get_player(sid)
+    if p:
+        name = p.name
+        if TL_ROOM.phase == TLPhase.PLAYING:
+            result = TL_ROOM.force_leave(sid)
+            _tl_log(f'💨 {name} mất kết nối (đứng bét).')
+            if result.get('round_over'):
+                _tl_after_action(result)
+            else:
+                _tl_broadcast()
+                _tl_notify_turn()
+            TL_ROOM.remove(sid)
+        else:
+            TL_ROOM.remove(sid)
+            _tl_log(f'💨 {name} disconnected.')
+        _tl_broadcast()
+        _tl_maybe_auto_reset()
+    else:
+        TL_ROOM.remove(sid)
+        _tl_maybe_auto_reset()
+
+
+@sio.on('tl_join', namespace=TL_NS)
+def tl_on_join(data):
+    sid   = request.sid
+    name  = (data.get('name') or 'Player').strip()[:20] or 'Player'
+    token = (data.get('token') or '').strip()[:64]
+
+    join_room(TL_ROOM_KEY, namespace=TL_NS)
+
+    # Reconnect: same name + same device
+    old_sid = TL_ROOM.find_active_sid_by_name(name)
+    if old_sid and old_sid != sid:
+        entry        = TL_ROOM.registry_lookup(name)
+        stored_token = (entry or {}).get('token')
+        same_device  = bool(stored_token and token and stored_token == token)
+        if same_device:
+            role, seat = TL_ROOM.rejoin(old_sid, new_sid=sid, name=name, token=token)
+            if role is not None:
+                sio.disconnect(old_sid)
+                is_host = (TL_ROOM.host_sid == sid)
+                emit('tl_joined', {'role': role, 'seat': seat, 'name': name,
+                                   'isHost': is_host, 'isReturning': True},
+                     namespace=TL_NS)
+                _tl_broadcast()
+                _tl_log(f'🔄 {name} nhập lại phòng.')
+                return
+        else:
+            emit('tl_join_rejected',
+                 {'msg': f'Tên "{name}" đang được dùng bởi người khác.'},
+                 namespace=TL_NS)
+            return
+
+    role, seat = TL_ROOM.add_player(sid, name, token=token)
+    is_host    = (TL_ROOM.host_sid == sid)
+    emit('tl_joined', {'role': role, 'seat': seat, 'name': name,
+                       'isHost': is_host, 'isReturning': False},
+         namespace=TL_NS)
+    _tl_log(f"{'🎮' if role == 'player' else '👁'} {name} "
+            f"{'vào bàn' if role == 'player' else 'đang xem'}"
+            f"{' (Chủ phòng)' if is_host else ''}.")
+    _tl_broadcast()
+
+
+@sio.on('tl_start', namespace=TL_NS)
+def tl_on_start(_data=None):
+    sid  = request.sid
+    p    = TL_ROOM._get_player(sid)
+    is_super = p and p.name.lower() == TL_SUPER_ADMIN
+    if TL_ROOM.host_sid != sid and not is_super:
+        emit('tl_error', {'msg': 'Chỉ chủ phòng mới có thể bắt đầu.'}, namespace=TL_NS)
+        return
+    if not TL_ROOM.can_start():
+        emit('tl_error', {'msg': 'Cần ít nhất 2 người chơi.'}, namespace=TL_NS)
+        return
+    ok, extra = TL_ROOM.start_round()
+    if not ok:
+        emit('tl_error', {'msg': extra}, namespace=TL_NS)
+        return
+
+    # Notify clients that shuffling/dealing is starting (triggers animation)
+    sio.emit('tl_dealing', {'roundNum': TL_ROOM.round_num},
+             room=TL_ROOM_KEY, namespace=TL_NS)
+
+    if isinstance(extra, dict) and extra.get('instant_wins'):
+        _tl_broadcast(reveal_all=True)
+        sio.emit('tl_instant_win', {'instant_wins': extra['instant_wins']},
+                 room=TL_ROOM_KEY, namespace=TL_NS)
+        # Apply instant-win scoring
+        winner_seats = [w['seat'] for w in extra['instant_wins']]
+        delta = TL_ROOM.apply_instant_win(winner_seats)
+        score_data = {
+            'score_changes': [
+                {'sid': p.sid, 'name': p.name, 'seat': p.seat,
+                 'change': delta.get(p.sid, 0), 'total': p.score, 'finish_rank': None}
+                for p in TL_ROOM.players if p.active
+            ],
+            'penalties_log': ['🎉 Thắng trắng – điểm được tính đặc biệt.'],
+        }
+        _tl_record_round_history(score_data)
+        sio.emit('tl_scoring', score_data, room=TL_ROOM_KEY, namespace=TL_NS)
+        TL_ROOM.reset_for_next_round()
+        _tl_broadcast()   # push WAITING state
+        return
+
+    _tl_broadcast()
+    sio.emit('tl_new_round', {'roundNum': TL_ROOM.round_num},
+             room=TL_ROOM_KEY, namespace=TL_NS)
+    _tl_log(f'🃏 Vòng {TL_ROOM.round_num} bắt đầu!', highlight=True)
+    _tl_notify_turn()
+
+
+@sio.on('tl_play', namespace=TL_NS)
+def tl_on_play(data):
+    _tl_stop_turn_timer()
+    sid         = request.sid
+    card_values = data.get('card_values', [])
+    result = TL_ROOM.play_cards(sid, card_values)
+    if not result.get('ok'):
+        emit('tl_error', {'msg': result.get('error', 'Lỗi.')}, namespace=TL_NS)
+        return
+
+    p    = TL_ROOM._get_player(sid)
+    name = p.name if p else '?'
+    combo_label = {
+        'single': 'lẻ', 'pair': 'đôi', 'triple': 'ba cây',
+        'quad': 'tứ quý', 'straight': 'sảnh', 'pair_seq': 'đôi thông'
+    }.get(result.get('combo', ''), '')
+    cards_str = ' '.join(
+        f"{c['rank']}{c['suit']}" for c in (result.get('played') or []))
+    _tl_log(f'🃏 {name} đánh {combo_label}: {cards_str}', highlight=(result.get('finish_rank') == 1))
+
+    if result.get('finish_rank'):
+        rank_msg = ['', '🥇 VỀ NHẤT!', '🥈 Về nhì', '🥉 Về ba', 'Về bét 😢']
+        _tl_log(f"🏁 {name} {rank_msg[result['finish_rank']]}!", highlight=True)
+
+    _tl_after_action(result)
+
+
+@sio.on('tl_pass', namespace=TL_NS)
+def tl_on_pass(_data=None):
+    _tl_stop_turn_timer()
+    sid    = request.sid
+    result = TL_ROOM.pass_turn(sid)
+    if not result.get('ok'):
+        emit('tl_error', {'msg': result.get('error', 'Lỗi.')}, namespace=TL_NS)
+        return
+    p    = TL_ROOM._get_player(sid)
+    name = p.name if p else '?'
+    _tl_log(f'🚫 {name} bỏ qua.')
+    _tl_after_action(result)
+
+
+@sio.on('tl_leave', namespace=TL_NS)
+def tl_on_leave(_data=None):
+    _tl_stop_turn_timer()
+    sid  = request.sid
+    p    = TL_ROOM._get_player(sid)
+    name = p.name if p else (TL_ROOM.spectators.get(sid, {}).get('name', '?'))
+    if p and TL_ROOM.phase == TLPhase.PLAYING:
+        result = TL_ROOM.force_leave(sid)
+        emit('tl_kicked', {}, namespace=TL_NS)
+        leave_room(TL_ROOM_KEY, namespace=TL_NS)
+        _tl_log(f'👋 {name} rời bàn giữa chừng (đứng bét).')
+        if result.get('round_over'):
+            _tl_after_action(result)
+        else:
+            _tl_broadcast()
+            _tl_notify_turn()
+        TL_ROOM.remove(sid)
+    else:
+        TL_ROOM.remove(sid)
+        emit('tl_kicked', {}, namespace=TL_NS)
+        leave_room(TL_ROOM_KEY, namespace=TL_NS)
+        _tl_log(f'👋 {name} rời bàn.')
+    _tl_broadcast()
+    _tl_maybe_auto_reset()
+
+
+@sio.on('tl_sit_down', namespace=TL_NS)
+def tl_on_sit_down(_data=None):
+    sid = request.sid
+    if sid not in TL_ROOM.spectators:
+        emit('tl_error', {'msg': 'Bạn không ở chế độ xem.'}, namespace=TL_NS)
+        return
+    info = TL_ROOM.spectators.get(sid)
+    role, seat = TL_ROOM.add_player(sid, info['name'])
+    if role == 'player':
+        emit('tl_joined', {'role': 'player', 'seat': seat,
+                           'name': info['name'], 'isHost': TL_ROOM.host_sid == sid},
+             namespace=TL_NS)
+        _tl_broadcast()
+        _tl_log(f"🪑 {info['name']} ngồi vào bàn (ghế {seat}).")
+    else:
+        emit('tl_error', {'msg': 'Bàn đã đủ 4 người.'}, namespace=TL_NS)
+
+
+@sio.on('tl_reset_scores', namespace=TL_NS)
+def tl_on_reset_scores(_data=None):
+    sid   = request.sid
+    state = TL_ROOM.get_state(viewer_sid=sid)
+    if state.get('canResetScoresSid') != sid:
+        emit('tl_error', {'msg': 'Bạn không có quyền reset điểm.'}, namespace=TL_NS)
+        return
+    TL_ROOM.reset_all_scores()
+    sio.emit('tl_round_history', {'history': []}, room=TL_ROOM_KEY, namespace=TL_NS)
+    _tl_broadcast()
+    _tl_log('🔄 Bảng điểm đã được reset về 0!', highlight=True)
+
+
+@sio.on('tl_reset_room', namespace=TL_NS)
+def tl_on_reset_room(_data=None):
+    global TL_ROOM, tl_turn_timer
+    sid = request.sid
+    p   = TL_ROOM._get_player(sid)
+    spec = TL_ROOM.spectators.get(sid)
+    name = (p.name if p else (spec['name'] if spec else '')).lower()
+    if name != TL_SUPER_ADMIN:
+        emit('tl_error', {'msg': 'Chỉ quản trị viên mới có quyền reset.'}, namespace=TL_NS)
+        return
+    if tl_turn_timer:
+        tl_turn_timer.cancel()
+        tl_turn_timer = None
+    all_sids = [p.sid for p in TL_ROOM.players] + list(TL_ROOM.spectators.keys())
+    TL_ROOM = TienLenRoom()
+    for s in all_sids:
+        sio.emit('tl_room_reset', {}, room=s, namespace=TL_NS)
+
+
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 if __name__ == '__main__':
-    print("✅  Poker Định Mệnh server starting on http://0.0.0.0:5500")
+    print("✅  Poker Định Mệnh + Tiến Lên server starting on http://0.0.0.0:5500")
+    print("   Poker:    http://localhost:5500/")
+    print("   Tiến Lên: http://localhost:5500/tienlen")
     sio.run(app, host='0.0.0.0', port=5500, debug=False, allow_unsafe_werkzeug=True)
