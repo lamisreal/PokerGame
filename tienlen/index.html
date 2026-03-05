@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <base href="/tienlen/" />
+  <title>Tiến Lên – Miền Nam</title>
+  <link rel="stylesheet" href="css/style.css" />
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+</head>
+<body>
+
+<!-- ══════════════════════ LOBBY ══════════════════════ -->
+<div id="lobby">
+  <div id="lobby-box">
+    <h1>Tiến Lên Miền Nam</h1>
+    <p class="lobby-subtitle">Tối đa 4 người · Điểm tích lũy · Phạt Heo / Cóng</p>
+      <a href="/" style="color:#7ab97a;font-size:.85rem;text-decoration:none">🏠 Trang chủ</a>
+
+    <div id="lobby-join">
+      <input id="player-name" type="text" maxlength="20" placeholder="Nhập tên…" autocomplete="off" />
+      <button id="btn-join">Vào bàn</button>
+    </div>
+    <p id="lobby-info" style="color:#a0d8a0;font-size:.85rem;margin-top:6px"></p>
+
+    <div id="lobby-players">
+      <h3>Người chơi</h3>
+      <ul id="lobby-player-list"></ul>
+    </div>
+    <div id="lobby-spectators" style="display:none">
+      <h3>Đang xem</h3>
+      <ul id="lobby-spectator-list"></ul>
+    </div>
+    <p id="lobby-hint">Chờ người chơi…</p>
+  </div>
+</div>
+
+<!-- ══════════════════════ MAIN APP ══════════════════════ -->
+<div id="app" style="display:none">
+
+  <!-- Top bar -->
+  <header id="top-bar">
+    <span id="logo">🀄 Tiến Lên</span>
+    <span id="round-label">Vòng 0</span>
+    <span id="phase-badge">Chờ…</span>
+    <button id="btn-reset-room"   style="display:none" title="Reset phòng">🔄 Reset Phòng</button>
+    <button id="btn-reset-scores" style="display:none" title="Reset điểm tất cả">🏦 Reset Điểm</button>
+    <button id="btn-view-scores"  style="display:none" title="Xem kết quả tất cả các vòng">📊 Xem kết quả</button>
+  </header>
+
+  <!-- Table wrap -->
+  <div id="table-wrap">
+    <div id="table">
+
+      <!-- ── Seats (4 positions around the oval) ── -->
+      <!-- Seat 0 – bottom (me) -->
+      <div class="seat" id="seat-0" data-seat="0">
+        <div class="player-name"   id="name-0">—</div>
+        <div class="player-score"  id="score-0"></div>
+        <div class="player-cards"  id="cards-count-0"></div>
+        <div class="player-status" id="status-0"></div>
+        <div class="finish-badge"  id="finish-0" style="display:none"></div>
+        <div class="turn-countdown" id="countdown-0" style="display:none">
+          <svg viewBox="0 0 36 36"><circle class="cd-track" cx="18" cy="18" r="15.9"/><circle class="cd-fill" id="cd-arc-0" cx="18" cy="18" r="15.9"/></svg>
+          <span class="cd-num" id="cd-num-0">30</span>
+        </div>
+      </div>
+
+      <!-- Seat 1 – right -->
+      <div class="seat" id="seat-1" data-seat="1">
+        <div class="player-name"   id="name-1">—</div>
+        <div class="player-score"  id="score-1"></div>
+        <div class="player-cards"  id="cards-count-1"></div>
+        <div class="player-status" id="status-1"></div>
+        <div class="finish-badge"  id="finish-1" style="display:none"></div>
+        <div class="turn-countdown" id="countdown-1" style="display:none">
+          <svg viewBox="0 0 36 36"><circle class="cd-track" cx="18" cy="18" r="15.9"/><circle class="cd-fill" id="cd-arc-1" cx="18" cy="18" r="15.9"/></svg>
+          <span class="cd-num" id="cd-num-1">30</span>
+        </div>
+      </div>
+
+      <!-- Seat 2 – top -->
+      <div class="seat" id="seat-2" data-seat="2">
+        <div class="player-name"   id="name-2">—</div>
+        <div class="player-score"  id="score-2"></div>
+        <div class="player-cards"  id="cards-count-2"></div>
+        <div class="player-status" id="status-2"></div>
+        <div class="finish-badge"  id="finish-2" style="display:none"></div>
+        <div class="turn-countdown" id="countdown-2" style="display:none">
+          <svg viewBox="0 0 36 36"><circle class="cd-track" cx="18" cy="18" r="15.9"/><circle class="cd-fill" id="cd-arc-2" cx="18" cy="18" r="15.9"/></svg>
+          <span class="cd-num" id="cd-num-2">30</span>
+        </div>
+      </div>
+
+      <!-- Seat 3 – left -->
+      <div class="seat" id="seat-3" data-seat="3">
+        <div class="player-name"   id="name-3">—</div>
+        <div class="player-score"  id="score-3"></div>
+        <div class="player-cards"  id="cards-count-3"></div>
+        <div class="player-status" id="status-3"></div>
+        <div class="finish-badge"  id="finish-3" style="display:none"></div>
+        <div class="turn-countdown" id="countdown-3" style="display:none">
+          <svg viewBox="0 0 36 36"><circle class="cd-track" cx="18" cy="18" r="15.9"/><circle class="cd-fill" id="cd-arc-3" cx="18" cy="18" r="15.9"/></svg>
+          <span class="cd-num" id="cd-num-3">30</span>
+        </div>
+      </div>
+
+      <!-- ── Center area ── -->
+      <div id="center">
+        <div id="trick-area">
+          <!-- past plays (max 3), injected by JS, oldest→newest left→right -->
+          <div id="trick-history"></div>
+          <!-- current play -->
+          <div id="trick-current">
+            <div id="trick-label">Bài trên bàn</div>
+            <div id="trick-cards"></div>
+            <div id="trick-combo"></div>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /table -->
+  </div><!-- /table-wrap -->
+
+  <!-- ── My hand (bottom, interactive) ── -->
+  <div id="my-hand-wrap">
+    <div id="my-hand-label">Bài của bạn <span id="my-card-count"></span></div>
+    <div id="my-hand"></div>
+  </div>
+
+  <!-- ── Action bar ── -->
+  <div id="action-bar">
+
+    <div id="spectator-banner" style="display:none">
+      <span>👁 Bạn đang xem</span>
+      <button id="btn-sit-down" class="ctrl-btn">🪑 Tham gia</button>
+    </div>
+
+    <div id="start-banner" style="display:none">
+      <button id="btn-game-start" class="ctrl-btn start-btn">▶ Bắt đầu ván mới</button>
+      <span id="start-hint"></span>
+    </div>
+
+    <div id="player-controls">
+      <button id="btn-leave" class="ctrl-btn leave-btn">🚪 Rời bàn</button>
+    </div>
+
+    <div id="action-buttons" style="display:none">
+      <button id="btn-pass"  class="action-btn pass-btn"  disabled>Bỏ qua</button>
+      <button id="btn-play"  class="action-btn play-btn"  disabled>Đánh bài</button>
+      <div id="selected-preview"></div>
+    </div>
+
+  </div><!-- /action-bar -->
+
+  <!-- ── Log panel ── -->
+  <div id="log-panel">
+    <div id="log-title">📋 Nhật ký</div>
+    <div id="log-body"></div>
+  </div>
+
+</div><!-- /app -->
+
+<!-- ── Dealing animation overlay ── -->
+<div id="deal-overlay" style="display:none">
+  <div id="deal-box">
+    <div id="deal-cards-anim">
+      <div class="deal-card dc1"></div>
+      <div class="deal-card dc2"></div>
+      <div class="deal-card dc3"></div>
+      <div class="deal-card dc4"></div>
+      <div class="deal-card dc5"></div>
+    </div>
+    <div id="deal-text">🃏 Đang xáo bài…</div>
+    <div id="deal-progress-wrap"><div id="deal-progress-bar"></div></div>
+  </div>
+</div>
+
+<!-- ── History overlay ── -->
+<div id="history-overlay" style="display:none">
+  <div id="history-box">
+    <div id="history-header">
+      <span id="history-title">📊 Kết Quả Các Vòng</span>
+      <button id="btn-history-close" title="Đóng">✕</button>
+    </div>
+    <div id="history-table-wrap">
+      <table id="history-table">
+        <thead id="history-thead"></thead>
+        <tbody id="history-tbody"></tbody>
+        <tfoot id="history-tfoot"></tfoot>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ── Score overlay ── -->
+<div id="score-overlay" style="display:none">
+  <div id="score-box">
+    <h2 id="score-title">Kết quả ván</h2>
+    <table id="score-table">
+      <thead><tr><th>Hạng</th><th>Tên</th><th>Thay đổi</th><th>Tổng</th></tr></thead>
+      <tbody id="score-tbody"></tbody>
+    </table>
+    <div id="penalties-log"></div>
+    <button id="btn-score-ok">OK</button>
+  </div>
+</div>
+
+<!-- ── Message overlay ── -->
+<div id="msg-overlay" style="display:none">
+  <div id="msg-box">
+    <div id="msg-title"></div>
+    <div id="msg-body"></div>
+    <button id="msg-ok">OK</button>
+  </div>
+</div>
+
+<script src="js/client.js"></script>
+</body>
+</html>
